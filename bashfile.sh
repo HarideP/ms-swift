@@ -32,3 +32,4 @@ swift rlhf \
     --num_generations 4 \
     --temperature 0.9 \
     --log_completions true
+    
