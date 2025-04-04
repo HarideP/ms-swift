@@ -339,23 +339,25 @@ class EbitdaPredictionORM(ORM):
 
         try:
             # 计算 Mean Absolute Error (MAE)
-            mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
+            # mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
 
             # 将MAE转换为奖励分数 (0到1之间)，MAE越小，奖励越高
             # 使用 1 / (1 + MAE) 的形式，确保MAE=0时奖励为1，MAE越大奖励越趋近于0
             # 添加一个小的epsilon防止MAE非常接近0时分母过小或为0 (虽然MAE非负)
-            epsilon = 1e-9
-            reward = 1.0 / (1.0 + mae + epsilon)
+            # epsilon = 1e-9
+            # reward = 1.0 / (1.0 + mae)
 
             # --- 可选：考虑其他奖励机制 ---
             # 1. 基于MAPE (Mean Absolute Percentage Error)，对规模不敏感，但需处理真实值为0的情况
-            # truths_array = np.array(ground_truths)
-            # if np.any(truths_array == 0):
-            #     # 处理分母为0的情况，例如使用 MAE 或给一个固定惩罚
-            #     pass
-            # else:
-            #     mape = np.mean(np.abs((np.array(predictions) - truths_array) / truths_array)) * 100
-            #     reward = max(0.0, 1.0 - mape / 100.0) # 简单线性转换，MAPE=100%时奖励为0
+            truths_array = np.array(ground_truths)
+            if np.any(truths_array == 0):
+                # 处理分母为0的情况，例如使用 MAE 或给一个固定惩罚
+                # pass
+                mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
+                reward = 1.0 / (1.0 + mae)
+            else:
+                mape = np.mean(np.abs((np.array(predictions) - truths_array) / truths_array)) * 100
+                reward = max(0.0, 1.0 - mape / 100.0) # 简单线性转换，MAPE=100%时奖励为0
 
             # 2. 考虑加入对<think>标签存在的奖励 (简单存在性检查)
             # if '<think>' in completion_text and '</think>' in completion_text:
@@ -364,7 +366,7 @@ class EbitdaPredictionORM(ORM):
             return reward
 
         except Exception as e:
-            print(f"ORM_DEBUG: Error calculating reward: {e}")
+            print(f"ORM_DEBUG: 计算奖励出错: {e}")
             return 0.0 # 计算出错则返回0奖励
 
     def __call__(self, completions: List[str], ground_truth_ebitda: List[List[float]], **kwargs) -> List[float]:
@@ -385,7 +387,7 @@ class EbitdaPredictionORM(ORM):
              # 返回与completions等长的0奖励列表，或抛出错误
              return [0.0] * len(completions)
 
-        print(f"ORM_INFO: Processing batch of {len(completions)} completions.") # 添加日志方便调试
+        print(f"ORM_INFO: 处理第 {len(completions)} 个completions.") # 添加日志方便调试
 
         for i in range(len(completions)):
             completion_text = completions[i]
@@ -394,13 +396,13 @@ class EbitdaPredictionORM(ORM):
             # 1. 解析预测值
             predicted_values = self.parse_answer(completion_text)
             if predicted_values:
-                 print(f"ORM_DEBUG: Parsed predictions for item {i}: {predicted_values}")
+                 print(f"ORM_DEBUG: 解析成功 {i}: {predicted_values}")
             else:
-                 print(f"ORM_DEBUG: Failed to parse predictions for item {i}. Completion: '{completion_text[:200]}...'") # 打印部分文本以供调试
+                 print(f"ORM_DEBUG: 解析失败 {i} 模型输出: ...'{completion_text[-200:]}'") # 打印部分文本以供调试
 
             # 2. 计算奖励
             reward = self.calculate_reward(predicted_values, truth)
-            print(f"ORM_DEBUG: Calculated reward for item {i}: {reward}")
+            print(f"ORM_DEBUG: 奖励函数输出： {i}: {reward}")
 
             rewards.append(reward)
 
