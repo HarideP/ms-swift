@@ -23,7 +23,7 @@ swift rlhf \
     --per_device_eval_batch_size 4 \
     --learning_rate 1e-6 \
     --gradient_accumulation_steps 1 \
-    --eval_steps 100 \
+    --eval_steps 1000 \
     --save_steps 100 \
     --save_total_limit 2 \
     --logging_steps 5 \
