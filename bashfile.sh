@@ -8,7 +8,7 @@ WANDB_API_KEY=your_wandb_key \
 
 swift rlhf \
     --rlhf_type grpo \
-    --model Qwen/Qwen2.5-7B \
+    --model Qwen/Qwen2.5-7B-Instruct \
     --external_plugins examples/train/grpo/plugin/plugin.py \
     --reward_funcs external_ebitda_predictor format \
     --train_type lora \
