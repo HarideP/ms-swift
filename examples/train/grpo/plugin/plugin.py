@@ -294,9 +294,124 @@ class CodeFormat(ORM):
         return rewards
 
 
+class EbitdaPredictionORM(ORM):
+    """
+    用于评估EBITDA预测结果的Outcome Reward Model (ORM)。
+    奖励基于预测值与真实值的接近程度（例如，MAE的倒数）。
+    """
+
+    def parse_answer(self, text: str) -> List[float] | None:
+        """从模型的输出中解析<answer>标签内的预测值"""
+        # 使用re.DOTALL允许多行匹配，以防<answer>标签跨行
+        match = re.search(r"<answer>(.*?)</answer>", text, re.DOTALL)
+        if not match:
+            print("ORM_DEBUG: No <answer> tag found.")
+            return None
+        try:
+            content = match.group(1).strip()
+            # 移除可能的方括号
+            if content.startswith('[') and content.endswith(']'):
+                content = content[1:-1]
+            # 按逗号分割并转换为浮点数
+            predictions = [float(x.strip()) for x in content.split(',')]
+            # 期望正好有4个预测值
+            if len(predictions) == 4:
+                return predictions
+            else:
+                print(f"ORM_DEBUG: Incorrect number of predictions found: {len(predictions)}. Expected 4.")
+                return None # 预测数量不符
+        except ValueError as e:
+            print(f"ORM_DEBUG: Error parsing prediction values: {e}. Content: '{match.group(1)}'")
+            return None # 无法解析为浮点数
+        except Exception as e:
+            print(f"ORM_DEBUG: Unexpected error during parsing: {e}")
+            return None
+
+    def calculate_reward(self, predictions: List[float] | None, ground_truths: List[float]) -> float:
+        """根据预测值和真实值计算奖励分数"""
+        if predictions is None:
+            # 如果格式错误或无法解析，给予最低奖励
+            return 0.0
+
+        if len(predictions) != len(ground_truths):
+             print(f"ORM_DEBUG: Mismatch between prediction ({len(predictions)}) and ground truth ({len(ground_truths)}) lengths.")
+             return 0.0 # 理论上不应发生，因为前面检查了长度，但作为保险
+
+        try:
+            # 计算 Mean Absolute Error (MAE)
+            mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
+
+            # 将MAE转换为奖励分数 (0到1之间)，MAE越小，奖励越高
+            # 使用 1 / (1 + MAE) 的形式，确保MAE=0时奖励为1，MAE越大奖励越趋近于0
+            # 添加一个小的epsilon防止MAE非常接近0时分母过小或为0 (虽然MAE非负)
+            epsilon = 1e-9
+            reward = 1.0 / (1.0 + mae + epsilon)
+
+            # --- 可选：考虑其他奖励机制 ---
+            # 1. 基于MAPE (Mean Absolute Percentage Error)，对规模不敏感，但需处理真实值为0的情况
+            # truths_array = np.array(ground_truths)
+            # if np.any(truths_array == 0):
+            #     # 处理分母为0的情况，例如使用 MAE 或给一个固定惩罚
+            #     pass
+            # else:
+            #     mape = np.mean(np.abs((np.array(predictions) - truths_array) / truths_array)) * 100
+            #     reward = max(0.0, 1.0 - mape / 100.0) # 简单线性转换，MAPE=100%时奖励为0
+
+            # 2. 考虑加入对<think>标签存在的奖励 (简单存在性检查)
+            # if '<think>' in completion_text and '</think>' in completion_text:
+            #    reward = min(1.0, reward + 0.05) # 给少量奖励加成
+
+            return reward
+
+        except Exception as e:
+            print(f"ORM_DEBUG: Error calculating reward: {e}")
+            return 0.0 # 计算出错则返回0奖励
+
+    def __call__(self, completions: List[str], ground_truth_ebitda: List[List[float]], **kwargs) -> List[float]:
+        """
+        主调用函数，处理一批次的生成结果和真实标签。
+
+        Args:
+            completions (List[str]): 模型生成的完整文本列表。
+            ground_truth_ebitda (List[List[float]]): 对应的真实未来4季度EBITDA列表 (从数据集中透传)。
+            **kwargs: 其他从数据集中透传的字段 (例如 company_id, last_quarter)。
+
+        Returns:
+            List[float]: 每个生成结果对应的奖励分数列表。
+        """
+        rewards = []
+        if len(completions) != len(ground_truth_ebitda):
+             print(f"ORM_ERROR: Mismatch in length between completions ({len(completions)}) and ground_truth_ebitda ({len(ground_truth_ebitda)})!")
+             # 返回与completions等长的0奖励列表，或抛出错误
+             return [0.0] * len(completions)
+
+        print(f"ORM_INFO: Processing batch of {len(completions)} completions.") # 添加日志方便调试
+
+        for i in range(len(completions)):
+            completion_text = completions[i]
+            truth = ground_truth_ebitda[i]
+
+            # 1. 解析预测值
+            predicted_values = self.parse_answer(completion_text)
+            if predicted_values:
+                 print(f"ORM_DEBUG: Parsed predictions for item {i}: {predicted_values}")
+            else:
+                 print(f"ORM_DEBUG: Failed to parse predictions for item {i}. Completion: '{completion_text[:200]}...'") # 打印部分文本以供调试
+
+            # 2. 计算奖励
+            reward = self.calculate_reward(predicted_values, truth)
+            print(f"ORM_DEBUG: Calculated reward for item {i}: {reward}")
+
+            rewards.append(reward)
+
+        return rewards
+
+
 orms['external_math_acc'] = MathAccuracy
 orms['external_math_format'] = MathFormat
 orms['external_countdown'] = CountdownORM
 orms['external_r1v_acc'] = MultiModalAccuracyORM
 orms['external_code_reward'] = CodeReward
 orms['external_code_format'] = CodeFormat
+
+orms['external_ebitda_predictor'] = EbitdaPredictionORM 
