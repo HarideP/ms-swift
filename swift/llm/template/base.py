@@ -436,14 +436,14 @@ class Template(ProcessorMixin):
         idxs = logprobs.argsort(descending=True, dim=-1)[:top_logprobs].tolist()
         logprobs = logprobs.tolist()
         return {
-            'content': {
+            'content': [{
                 'index': pred,
                 'logprobs': [logprobs[p] for p in pred] if isinstance(pred, (list, tuple)) else logprobs[pred],
                 'top_logprobs': [{
                     'index': idx,
                     'logprob': logprobs[idx]
                 } for idx in idxs]
-            }
+            }]
         }
 
     @staticmethod
@@ -999,6 +999,17 @@ class Template(ProcessorMixin):
             val = inputs['generate_ids']
         for v in val:
             self.print_inputs({k: v.tolist()})
+
+    @staticmethod
+    def _split_list(inputs: List[int], x: int) -> List[List[int]]:
+        idxs = findall(inputs, x)
+        idxs.append(len(inputs))
+        res = []
+        lo = 0
+        for idx in idxs:
+            res.append(inputs[lo:idx])
+            lo = idx + 1
+        return res
 
     def replace_video2image(self, load_video_func, inputs, replace_tag: Callable) -> List[Context]:
         context_list = []

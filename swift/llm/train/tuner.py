@@ -1,10 +1,12 @@
 # Copyright (c) Alibaba, Inc. and its affiliates.
+import inspect
 import os
 from typing import List, Union
 
 import torch
 import transformers
 from packaging import version
+from transformers import TrainingArguments
 
 from swift.llm import TrainArguments, get_model_arch
 from swift.plugin import Tuner, extra_tuners
@@ -74,11 +76,11 @@ def get_multimodal_target_regex(
     ignore_pattern += model_arch.lm_head or []
     ignore_pattern = '|'.join(ignore_pattern)
 
-    target_regex = f'^({prefix_pattern})'
+    target_regex = rf'^({prefix_pattern})'
     if ignore_pattern:
-        target_regex += f'(?!.*({ignore_pattern})).*'
+        target_regex += rf'(?!.*\b({ignore_pattern})\b).*'
     if rejected_pattern:
-        target_regex = f'(?!^({rejected_pattern}))' + target_regex
+        target_regex = rf'(?!^({rejected_pattern}))' + target_regex
     return target_regex
 
 
@@ -337,7 +339,7 @@ class TunerMixin:
 
     @classmethod
     def prepare_model(cls, args, model, *, template=None, train_dataset=None, task_type=None):
-        if args.use_liger:
+        if args.use_liger_kernel and 'use_liger_kernel' not in inspect.signature(TrainingArguments).parameters:
             # Apply liger
             apply_liger(args.model_type)
 
