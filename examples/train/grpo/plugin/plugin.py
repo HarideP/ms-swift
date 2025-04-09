@@ -392,17 +392,16 @@ class EbitdaPredictionORM(ORM):
         for i in range(len(completions)):
             completion_text = completions[i]
             truth = ground_truth_ebitda[i]
-
             # 1. 解析预测值
             predicted_values = self.parse_answer(completion_text)
             if predicted_values:
-                 print(f"ORM_DEBUG: 解析成功 {i}: {predicted_values}")
+                 print(f"ORM_DEBUG: {i} 解析成功: {predicted_values}")
             else:
-                 print(f"ORM_DEBUG: 解析失败 {i} 模型输出: ...'{completion_text[-200:]}'") # 打印部分文本以供调试
+                 print(f"ORM_DEBUG: {i} 解析失败") # 打印部分文本以供调试
 
             # 2. 计算奖励
             reward = self.calculate_reward(predicted_values, truth)
-            print(f"ORM_DEBUG: 奖励函数输出： {i}: {reward}")
+            print(f"ORM_DEBUG: {i} 准确度得分: {reward}")
 
             rewards.append(reward)
 
@@ -472,7 +471,7 @@ class ProgressiveFormatORM(ORM):
         for i, completion_text in enumerate(completions):
             # 评估格式
             reward = self.evaluate_format(completion_text)
-            print(f"ORM_DEBUG: 格式评估 {i}: {reward}")
+            print(f"ORM_DEBUG: {i} 格式评估得分: {reward}")
             rewards.append(reward)
             
         return rewards
