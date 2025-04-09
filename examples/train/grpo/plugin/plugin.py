@@ -388,7 +388,7 @@ class EbitdaPredictionORM(ORM):
              # 返回与completions等长的0奖励列表，或抛出错误
              return [0.0] * len(completions)
 
-        print(f"ORM_INFO: 处理第 {len(completions)} 个completions.") # 添加日志方便调试
+        print(f"ORM_INFO: 处理 {len(completions)} 个completions.") # 添加日志方便调试
 
         for i in range(len(completions)):
             completion_text = completions[i]
