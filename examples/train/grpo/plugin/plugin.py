@@ -352,8 +352,7 @@ class EbitdaPredictionORM(ORM):
             # 1. 基于MAPE (Mean Absolute Percentage Error)，对规模不敏感，但需处理真实值为0的情况
             truths_array = np.array(ground_truths)
             if np.any(truths_array == 0):
-                # 处理分母为0的情况，例如使用 MAE 或给一个固定惩罚
-                # pass
+                # 处理分母为0的情况，使用 MAE 或给一个固定惩罚（概率很小）
                 mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
                 reward = 1.0 / (1.0 + mae)
             else:
