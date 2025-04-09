@@ -40,14 +40,17 @@ Hints:
 ### Data Arguments
 - 🔥dataset: A list of dataset IDs or paths. Default is `[]`. The input format for each dataset is: `dataset ID or dataset path:sub-dataset#sampling size`, where sub-dataset and sampling data are optional. Local datasets support jsonl, csv, json, folders, etc. Open-source datasets can be cloned locally via git and used offline by passing the folder. For custom dataset formats, refer to [Custom Dataset](../Customization/Custom-dataset.md). You can pass in `--dataset <dataset1> <dataset2>` to use multiple datasets.
   - Sub-dataset: This parameter is effective only when the dataset is an ID or folder. If a subset was specified during registration, and only one sub-dataset exists, the registered sub-dataset is selected by default; otherwise, it defaults to 'default'. You can use `/` to select multiple sub-datasets, e.g., `<dataset_id>:subset1/subset2`. You can also use 'all' to select all sub-datasets, e.g., `<dataset_id>:all`.
-  - Sampling Size: By default, the complete dataset is used. If the sampling size is less than the total number of data samples, samples are selected randomly without repetition. If the sampling size exceeds the total number of data samples, then `sampling size%total data samples` samples are randomly sampled additionally, and data samples are repetitively sampled `sampling size//total data samples` times.
+  - Sampling Size: By default, the complete dataset is used. If the sampling size is less than the total number of data samples, samples are selected randomly without repetition. If the sampling size exceeds the total number of data samples, then `sampling size%total data samples` samples are randomly sampled additionally, and data samples are repetitively sampled `sampling size//total data samples` times. Note: Streaming datasets only perform sequential sampling. If `--dataset_shuffle false` is set, non-streaming datasets will also perform sequential sampling.
 - 🔥val_dataset: A list of validation set IDs or paths. Default is `[]`.
 - 🔥split_dataset_ratio: Ratio for splitting the training set and validation set when val_dataset is not specified, default is 0.01. Set to 0 if no validation set split is needed.
 - data_seed: Random seed for the dataset, default is 42.
 - 🔥dataset_num_proc: Number of processes for dataset preprocessing, default is 1.
+- dataset_shuffle: Whether to shuffle the dataset. Defaults to True.
+  - Note: The shuffling in CPT/SFT consists of two parts: dataset shuffling, controlled by `dataset_shuffle`; and shuffling in the train_dataloader, controlled by `train_dataloader_shuffle`.
 - 🔥streaming: Stream reading and processing of the dataset, default is False. It is typically set to True when handling large datasets.
 - interleave_prob: Defaults to None. When combining multiple datasets, the `concatenate_datasets` function is used by default. If this parameter is set, the `interleave_datasets` function will be used instead. This parameter is typically used when combining streaming datasets and is passed to the `interleave_datasets` function.
 - stopping_strategy: Can be either "first_exhausted" or "all_exhausted", with the default being "first_exhausted". This parameter is passed to the `interleave_datasets` function.
+- shuffle_buffer_size: This parameter is used to specify the shuffle buffer size for streaming datasets. Defaults to 1000.
 - enable_cache: Use cache for dataset preprocessing, default is False.
 - download_mode: Dataset download mode, including `reuse_dataset_if_exists` and `force_redownload`, default is reuse_dataset_if_exists.
 - columns: Used for column mapping of the dataset to ensure that the dataset conforms to the format that AutoPreprocessor can handle. For more details, see [here](../Customization/Custom-dataset.md). You can pass in a JSON string, for example: `'{"text1": "query", "text2": "response"}'`, with the default being None.
@@ -126,7 +129,8 @@ This parameter list inherits from transformers `Seq2SeqTrainingArguments`, with 
 - lr_scheduler_type: Type of lr_scheduler, defaults to 'cosine'.
 - lr_scheduler_kwargs: Other parameters for the lr_scheduler, defaults to None.
 - 🔥gradient_checkpointing_kwargs: Parameters for `torch.utils.checkpoint`. For example, set as `--gradient_checkpointing_kwargs '{"use_reentrant": false}'`. Defaults to None.
-- report_to: Default value is `tensorboard`. You can also specify `--report_to tensorboard wandb swanlab` or `--report_to all`.
+- full_determinism: Ensures reproducible results during training. Note: This will negatively impact performance. Defaults to False.
+- 🔥report_to: Default value is `tensorboard`. You can also specify `--report_to tensorboard wandb swanlab` or `--report_to all`.
 - logging_first_step: Whether to log the first step, defaults to True.
 - logging_steps: Interval for logging, defaults to 5.
 - predict_with_generate: Whether to use generative method during validation, default is False.
@@ -153,8 +157,9 @@ Other important parameters:
 - dataloader_pin_memory: Default is True.
 - dataloader_persistent_workers: Default is False.
 - dataloader_prefetch_factor: Defaults to None. If `dataloader_num_workers > 0`, it is set to 10.
-- train_dataloader_shuffle: Whether the training dataloader should shuffle data, defaulting to True. This parameter is invalid for IterableDataset. IterableDataset reads data in a sequential manner.
+- train_dataloader_shuffle: Specifies whether the dataloader for CPT/SFT training is shuffled, with the default set to True. This parameter is not applicable to IterableDataset, as IterableDataset reads in a sequential manner.
 - 🔥neftune_noise_alpha: Coefficient of noise added by neftune, default is 0. Usually can be set to 5, 10, 15.
+- 🔥use_liger_kernel: Whether to enable the [Liger](https://github.com/linkedin/Liger-Kernel) kernel to accelerate training and reduce GPU memory consumption. Defaults to False. Example shell script can be found [here](https://github.com/modelscope/ms-swift/blob/main/examples/train/liger).
 - average_tokens_across_devices: Whether to average the number of tokens across devices. If set to True, `num_tokens_in_batch` will be synchronized using all_reduce for accurate loss calculation. Default is False.
 - max_grad_norm: Gradient clipping. Default is 1.
 - push_to_hub: Push checkpoint to hub. Default is False.
@@ -288,10 +293,6 @@ The following parameters are effective when `train_type` is set to `reft`.
 - reft_intervention_type: Type of ReFT, supports 'NoreftIntervention', 'LoreftIntervention', 'ConsreftIntervention', 'LobireftIntervention', 'DireftIntervention', 'NodireftIntervention', default is `LoreftIntervention`.
 - reft_args: Other supported parameters for ReFT Intervention, input in json-string format.
 
-#### Liger
-
-- use_liger: Use liger-kernel for training.
-
 ### LMDeploy Arguments
 
 Parameter meanings can be found in the [lmdeploy documentation](https://lmdeploy.readthedocs.io/en/latest/api/pipeline.html#turbomindengineconfig).
@@ -335,7 +336,7 @@ Training arguments include the [base arguments](#base-arguments), [Seq2SeqTraine
 - 🔥create_checkpoint_symlink: Creates additional checkpoint symlinks to facilitate writing automated training scripts. The symlink paths for `best_model` and `last_model` are `f'{output_dir}/best'` and `f'{output_dir}/last'` respectively.
 - loss_type: Type of loss. Defaults to None, which uses the model's built-in loss function.
 - 🔥packing: Whether to use sequence packing to improve computational efficiency. The default value is False.
-  - Note: When using packing, please combine it with --attn_impl flash_attn. For details, see [this PR](https://github.com/huggingface/transformers/pull/31629). Packing does not currently support multimodal models.
+  - Note: When using packing, please combine it with `--attn_impl flash_attn` and ensure "transformers>=4.44". For details, see [this PR](https://github.com/huggingface/transformers/pull/31629).
 - 🔥lazy_tokenize: Whether to use lazy tokenization. If set to False, all dataset samples are tokenized before training (for multimodal models, this includes reading images from disk). This parameter defaults to False for LLM training, and True for MLLM training, to save memory.
 - acc_strategy: Strategy for calculating accuracy during training and validation. Options are `seq`-level and `token`-level accuracy, with `token` as the default.
 - max_new_tokens: Generation parameter override. The maximum number of tokens to generate when `predict_with_generate=True`, defaulting to 64.
@@ -426,18 +427,27 @@ The meanings of the following parameters can be referenced [here](https://huggin
 - gc_collect_after_offload: Whether to perform garbage collection (both Python GC and GPU GC) after offloading. The default is `False`.
 - multi_turn_func: The multi turn GRPO plugin name. Add your multi-turn implementation in plugin/multi_turn.py
 - mini_batch_size: Used to further split the batch size on each device (per_device_batch) into smaller sub-batches. To ensure the split is valid, per_device_train_batch_size needs be divisible by mini_batch_size
+- dynamic_sample: Exclude data within the group where the reward standard deviation is 0, and additionally sample new data. Default is False.
+- max_resample_times: Under the dynamic_sample setting, limit the number of resampling attempts to a maximum of 3. Default is 3 times.
+- overlong_filter: Skip overlong truncated samples, which will not be included in loss calculation. Default is False.
+The hyperparameters for the reward function can be found in the [Built-in Reward Functions section](#built-in-reward-functions).
 
 cosine reward function arguments
-- `cosine_min_len_value_wrong` (default: 0.0): Reward value corresponding to the minimum length when the answer is incorrect. Default is 0.0
-- `cosine_max_len_value_wrong` (default: -0.5): Reward value corresponding to the maximum length when the answer is incorrect. Default is -0.5
-- `cosine_min_len_value_correct` (default: 1.0): Reward value corresponding to the minimum length when the answer is correct. Default is 1.0
-- `cosine_max_len_value_correct` (default: 0.5): Reward value corresponding to the maximum length when the answer is correct. Default is 0.5
-- `cosine_max_len` (default value equal to the model's maximum generation capacity): Maximum length limit for generated text. Default value equal to max_completion_length
+- cosine_min_len_value_wrong (default: 0.0): Reward value corresponding to the minimum length when the answer is incorrect. Default is 0.0
+- cosine_max_len_value_wrong (default: -0.5): Reward value corresponding to the maximum length when the answer is incorrect. Default is -0.5
+- cosine_min_len_value_correct (default: 1.0): Reward value corresponding to the minimum length when the answer is correct. Default is 1.0
+- cosine_max_len_value_correct (default: 0.5): Reward value corresponding to the maximum length when the answer is correct. Default is 0.5
+- cosine_max_len (default value equal to the model's maximum generation capacity): Maximum length limit for generated text. Default value equal to max_completion_length
 
 repetition penalty function arguments
 
-- `repetition_n_grams` (default: 3): Size of the n-gram used to detect repetition.
-- `repetition_max_penalty` (default: -1.0): Maximum penalty value, which controls the intensity of the penalty.
+- repetition_n_grams (default: 3): Size of the n-gram used to detect repetition.
+- repetition_max_penalty (default: -1.0): Maximum penalty value, which controls the intensity of the penalty.
+
+Soft overlong reward parameters:
+
+- soft_max_length: L_max in the paper, the maximum generation length of the model, default is equal to max_completion_length.
+- soft_cache_length: L_cache in the paper, controls the length penalty interval, which is defined as [soft_max_length - soft_cache_length, soft_max_length].
 
 #### SWANLAB
 
@@ -637,3 +647,4 @@ For the meaning of the arguments, please refer to [here](https://modelscope.cn/m
 - MASTER_ADDR: Pass-through for the `--master_addr` parameter in torchrun.
 - NNODES: Pass-through for the `--nnodes` parameter in torchrun.
 - NODE_RANK: Pass-through for the `--node_rank` parameter in torchrun.
+- LOG_LEVEL: The log level, default is 'INFO'. You can set it to 'WARNING', 'ERROR', etc.
