@@ -409,6 +409,76 @@ class EbitdaPredictionORM(ORM):
         return rewards
 
 
+
+class ProgressiveFormatORM(ORM):
+    """
+    用于评估模型输出格式的渐进式奖励函数。
+    通过分阶段奖励不同的格式完成度，引导模型逐步掌握 <think></think><answer></answer> 的回答模式。
+    """
+
+    def evaluate_format(self, text: str) -> float:
+        """
+        评估文本格式的完成度，返回0.0到1.0之间的奖励分数。
+        
+        奖励等级:
+        1. 0.0: 没有任何格式元素
+        2. 0.2: 包含 <think> 标签
+        3. 0.4: 包含 <think> 和 </think> 标签
+        4. 0.6: 包含 <think></think> 且有内容
+        5. 0.8: 包含 <think></think> 和 <answer> 标签
+        6. 1.0: 包含完整的 <think></think><answer></answer> 格式
+        """
+        # 检查是否包含完整的格式
+        full_pattern = r'^<think>.*?</think>\s*<answer>.*?</answer>(?![\s\S])'
+        if re.match(full_pattern, text, re.DOTALL | re.MULTILINE):
+            return 1.0
+            
+        # 检查是否包含 <think></think> 和 <answer> 标签
+        partial_pattern = r'<think>.*?</think>\s*<answer>'
+        if re.search(partial_pattern, text, re.DOTALL | re.MULTILINE):
+            return 0.8
+            
+        # 检查是否包含 <think></think> 且有内容
+        think_content_pattern = r'<think>.*?</think>'
+        think_match = re.search(think_content_pattern, text, re.DOTALL | re.MULTILINE)
+        if think_match and len(think_match.group(0)) > len('<think></think>'):
+            return 0.6
+            
+        # 检查是否包含 <think> 和 </think> 标签
+        if '<think>' in text and '</think>' in text:
+            return 0.4
+            
+        # 检查是否只包含 <think> 标签
+        if '<think>' in text:
+            return 0.2
+            
+        # 没有任何格式元素
+        return 0.0
+
+    def __call__(self, completions: List[str], **kwargs) -> List[float]:
+        """
+        主调用函数，处理一批次的生成结果。
+
+        Args:
+            completions (List[str]): 模型生成的完整文本列表。
+            **kwargs: 其他参数。
+
+        Returns:
+            List[float]: 每个生成结果对应的格式奖励分数列表。
+        """
+        rewards = []
+        print(f"ORM_INFO: 处理 {len(completions)} 个completions的格式评估.")
+        
+        for i, completion_text in enumerate(completions):
+            # 评估格式
+            reward = self.evaluate_format(completion_text)
+            print(f"ORM_DEBUG: 格式评估 {i}: {reward}")
+            rewards.append(reward)
+            
+        return rewards
+
+
+
 orms['external_math_acc'] = MathAccuracy
 orms['external_math_format'] = MathFormat
 orms['external_countdown'] = CountdownORM
@@ -417,3 +487,4 @@ orms['external_code_reward'] = CodeReward
 orms['external_code_format'] = CodeFormat
 
 orms['external_ebitda_predictor'] = EbitdaPredictionORM 
+orms['external_progressive_format'] = ProgressiveFormatORM 
