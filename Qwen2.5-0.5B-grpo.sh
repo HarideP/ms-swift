@@ -8,7 +8,7 @@ WANDB_API_KEY=your_wandb_key \
 
 swift rlhf \
     --rlhf_type grpo \
-    --model Qwen/Qwen2.5-7B-Instruct \
+    --model Qwen/Qwen2.5-0.5B-Instruct \
     --external_plugins examples/train/grpo/plugin/plugin.py \
     --reward_funcs external_ebitda_predictor format \
     --train_type lora \
@@ -16,7 +16,7 @@ swift rlhf \
     --lora_alpha 32 \
     --target_modules all-linear \
     --torch_dtype bfloat16 \
-    --dataset dataset/ebitda_grpo_dataset.jsonl \
+    --dataset dataset/ebitda_prediction_grpo_dataset_v4.jsonl \
     --max_completion_length 1024 \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
