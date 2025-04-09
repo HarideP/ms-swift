@@ -1,6 +1,7 @@
 # pip install math_verify # reward function
 # pip install -U trl
-# GPU memory: 80GiB
+# GPU: 4090PLUS-48G*2
+# GPU memory: 96G
 # You can set `--reward_model` to use a reward model to provide rewards.
 # 确保使用 torchrun 或 swift cli 能正确识别多卡环境
 export WANDB_API_KEY=key
