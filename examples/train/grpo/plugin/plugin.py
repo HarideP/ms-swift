@@ -421,10 +421,10 @@ class ProgressiveFormatORM(ORM):
         
         奖励等级:
         1. 0.0: 没有任何格式元素
-        2. 0.2: 包含 <think> 标签
-        3. 0.4: 包含 <think> 和 </think> 标签
-        4. 0.6: 包含 <think></think> 且有内容
-        5. 0.8: 包含 <think></think> 和 <answer> 标签
+        2. 0.2: 包含 <think> 标签或 <answer> 标签
+        3. 0.4: 包含 <think> 和 </think> 标签，或 <answer> 和 </answer> 标签
+        4. 0.6: 包含 <think></think> 且有内容，或 <answer></answer> 且有内容
+        5. 0.8: 包含 <think></think> 和 <answer> 标签，或 <answer></answer> 和 <think> 标签
         6. 1.0: 包含完整的 <think></think><answer></answer> 格式
         """
         # 检查是否包含完整的格式
@@ -433,8 +433,13 @@ class ProgressiveFormatORM(ORM):
             return 1.0
             
         # 检查是否包含 <think></think> 和 <answer> 标签
-        partial_pattern = r'<think>.*?</think>\s*<answer>'
-        if re.search(partial_pattern, text, re.DOTALL | re.MULTILINE):
+        partial_pattern1 = r'<think>.*?</think>\s*<answer>'
+        if re.search(partial_pattern1, text, re.DOTALL | re.MULTILINE):
+            return 0.8
+            
+        # 检查是否包含 <answer></answer> 和 <think> 标签
+        partial_pattern2 = r'<answer>.*?</answer>\s*<think>'
+        if re.search(partial_pattern2, text, re.DOTALL | re.MULTILINE):
             return 0.8
             
         # 检查是否包含 <think></think> 且有内容
@@ -443,12 +448,22 @@ class ProgressiveFormatORM(ORM):
         if think_match and len(think_match.group(0)) > len('<think></think>'):
             return 0.6
             
+        # 检查是否包含 <answer></answer> 且有内容
+        answer_content_pattern = r'<answer>.*?</answer>'
+        answer_match = re.search(answer_content_pattern, text, re.DOTALL | re.MULTILINE)
+        if answer_match and len(answer_match.group(0)) > len('<answer></answer>'):
+            return 0.6
+            
         # 检查是否包含 <think> 和 </think> 标签
         if '<think>' in text and '</think>' in text:
             return 0.4
             
-        # 检查是否只包含 <think> 标签
-        if '<think>' in text:
+        # 检查是否包含 <answer> 和 </answer> 标签
+        if '<answer>' in text and '</answer>' in text:
+            return 0.4
+            
+        # 检查是否只包含 <think> 标签或 <answer> 标签
+        if '<think>' in text or '<answer>' in text:
             return 0.2
             
         # 没有任何格式元素
