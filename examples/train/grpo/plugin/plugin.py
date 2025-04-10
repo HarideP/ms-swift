@@ -357,7 +357,22 @@ class EbitdaPredictionORM(ORM):
                 reward = 1.0 / (1.0 + mae)
             else:
                 mape = np.mean(np.abs((np.array(predictions) - truths_array) / truths_array)) * 100
-                reward = max(0.0, 1.0 - mape / 100.0) # 简单线性转换，MAPE=100%时奖励为0
+                
+                # 非线性奖励机制
+                # 当MAPE < 5%时，给予接近满分的奖励
+                # 当MAPE > 50%时，奖励增长缓慢
+                if mape < 5.0:
+                    # MAPE小于5%时，给予接近满分的奖励
+                    reward = 0.95 + 0.05 * (1.0 - mape / 5.0)
+                elif mape < 20.0:
+                    # MAPE在5%-20%之间，奖励从0.95快速下降到0.5
+                    reward = 0.95 - 0.45 * (mape - 5.0) / 15.0
+                elif mape < 50.0:
+                    # MAPE在20%-50%之间，奖励从0.5缓慢下降到0.2
+                    reward = 0.5 - 0.3 * (mape - 20.0) / 30.0
+                else:
+                    # MAPE大于50%时，奖励增长非常缓慢
+                    reward = max(0.0, 0.2 - 0.2 * (mape - 50.0) / 50.0)
 
             # 2. 考虑加入对<think>标签存在的奖励 (简单存在性检查)
             # if '<think>' in completion_text and '</think>' in completion_text:
