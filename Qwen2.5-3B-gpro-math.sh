@@ -10,7 +10,8 @@ swift rlhf \
     --train_type full \
     --torch_dtype bfloat16 \
     --dataset modelscope/gsm8k \
-    --max_completion_length 2048 \
+    --max_length 512 \
+    --max_completion_length 512 \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 4 \
