@@ -4,14 +4,12 @@ export NPROC_PER_NODE=1
 swift rlhf \
     --rlhf_type grpo \
     --model /root/Qwen2.5-3B-Instruct \
+    --ref_model /root/Qwen2.5-3B-Instruct \
     --external_plugins examples/train/grpo/plugin/plugin.py \
-    --reward_funcs external_ebitda_predictor external_progressive_format \
-    --train_type lora \
-    --lora_rank 8 \
-    --lora_alpha 32 \
-    --target_modules all-linear \
+    --reward_funcs external_correctness external_integer_format external_strict_format external_soft_format external_xml_count \
+    --train_type full \
     --torch_dtype bfloat16 \
-    --dataset /root/ebitda_prediction_grpo_dataset/ebitda_prediction_grpo_dataset_v5.jsonl \
+    --dataset modelscope/gsm8k \
     --max_completion_length 2048 \
     --num_train_epochs 1 \
     --per_device_train_batch_size 4 \
@@ -20,9 +18,9 @@ swift rlhf \
     --gradient_accumulation_steps 1 \
     --eval_steps 1000 \
     --save_steps 100 \
-    --save_total_limit 1 \
+    --save_total_limit 2 \
     --logging_steps 5 \
-    --output_dir Qwen2.5-3B-gpro-output \
+    --output_dir Qwen2.5-3B-gpro-math-output-full \
     --warmup_ratio 0.05 \
     --dataloader_num_workers 4 \
     --dataset_num_proc 4 \

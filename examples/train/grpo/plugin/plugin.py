@@ -329,7 +329,7 @@ class EbitdaPredictionORM(ORM):
             return None
 
     def calculate_reward(self, predictions: List[float] | None, ground_truths: List[float]) -> float:
-        """根据预测值和真实值计算奖励分数"""
+        """根据预测值和真实值计算奖励分数，只使用最后一个季度的预测值"""
         if predictions is None:
             # 如果格式错误或无法解析，给予最低奖励
             return 0.0
@@ -339,34 +339,49 @@ class EbitdaPredictionORM(ORM):
              return 0.0 # 理论上不应发生，因为前面检查了长度，但作为保险
 
         try:
-            # 计算 Mean Absolute Error (MAE)
-            # mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
-
-            # 将MAE转换为奖励分数 (0到1之间)，MAE越小，奖励越高
-            # 使用 1 / (1 + MAE) 的形式，确保MAE=0时奖励为1，MAE越大奖励越趋近于0
-            # 添加一个小的epsilon防止MAE非常接近0时分母过小或为0 (虽然MAE非负)
-            # epsilon = 1e-9
-            # reward = 1.0 / (1.0 + mae)
-
-            # --- 可选：考虑其他奖励机制 ---
-            # 1. 基于MAPE (Mean Absolute Percentage Error)，对规模不敏感，但需处理真实值为0的情况
-            truths_array = np.array(ground_truths)
-            if np.any(truths_array == 0):
-                # 处理分母为0的情况，使用 MAE 或给一个固定惩罚（概率很小）
-                mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
+            # 方法一，使用全部数值进行奖励计算（保留）
+            # truths_array = np.array(ground_truths)
+            # if np.any(truths_array == 0):
+            #     # 处理分母为0的情况，使用 MAE 或给一个固定惩罚（概率很小）
+            #     mae = np.mean(np.abs(np.array(predictions) - np.array(ground_truths)))
+            #     reward = 1.0 / (1.0 + mae)
+            # else:
+            #     mape = np.mean(np.abs((np.array(predictions) - truths_array) / truths_array)) * 100
+                
+            #     # 非线性奖励机制
+            #     # 当MAPE < 5%时，给予接近满分的奖励
+            #     # 当MAPE > 50%时，奖励增长缓慢
+            #     if mape < 10.0:
+            #         # MAPE小于5%时，给予接近满分的奖励
+            #         reward = 0.95 + 0.05 * (1.0 - mape / 10.0)
+            #     elif mape < 20.0:
+            #         # MAPE在5%-20%之间，奖励从0.95快速下降到0.5
+            #         reward = 0.95 - 0.45 * (mape - 5.0) / 15.0
+            #     elif mape < 50.0:
+            #         # MAPE在20%-50%之间，奖励从0.5缓慢下降到0.2
+            #         reward = 0.5 - 0.3 * (mape - 20.0) / 30.0
+            #     else:
+            #         # MAPE大于50%时，奖励增长非常缓慢
+            #         reward = max(0.0, 0.2 - 0.2 * (mape - 50.0) / 50.0)
+            # 方法二，只使用最后一个季度的预测值和真实值
+            last_prediction = predictions[-1]
+            last_truth = ground_truths[-1]
+            
+            if last_truth == 0:
+                # 处理分母为0的情况，使用绝对误差
+                mae = abs(last_prediction - last_truth)
                 reward = 1.0 / (1.0 + mae)
             else:
-                mape = np.mean(np.abs((np.array(predictions) - truths_array) / truths_array)) * 100
+                # 计算最后一个季度的MAPE
+                mape = abs((last_prediction - last_truth) / last_truth) * 100
                 
                 # 非线性奖励机制
-                # 当MAPE < 5%时，给予接近满分的奖励
-                # 当MAPE > 50%时，奖励增长缓慢
-                if mape < 5.0:
-                    # MAPE小于5%时，给予接近满分的奖励
-                    reward = 0.95 + 0.05 * (1.0 - mape / 5.0)
+                if mape < 10.0:
+                    # MAPE小于10%时，给予接近满分的奖励
+                    reward = 0.95 + 0.05 * (1.0 - mape / 10.0)
                 elif mape < 20.0:
-                    # MAPE在5%-20%之间，奖励从0.95快速下降到0.5
-                    reward = 0.95 - 0.45 * (mape - 5.0) / 15.0
+                    # MAPE在10%-20%之间，奖励从0.95快速下降到0.5
+                    reward = 0.95 - 0.45 * (mape - 10.0) / 10.0
                 elif mape < 50.0:
                     # MAPE在20%-50%之间，奖励从0.5缓慢下降到0.2
                     reward = 0.5 - 0.3 * (mape - 20.0) / 30.0
@@ -374,11 +389,8 @@ class EbitdaPredictionORM(ORM):
                     # MAPE大于50%时，奖励增长非常缓慢
                     reward = max(0.0, 0.2 - 0.2 * (mape - 50.0) / 50.0)
 
-            # 2. 考虑加入对<think>标签存在的奖励 (简单存在性检查)
-            # if '<think>' in completion_text and '</think>' in completion_text:
-            #    reward = min(1.0, reward + 0.05) # 给少量奖励加成
-
             return reward
+        
 
         except Exception as e:
             print(f"ORM_DEBUG: 计算奖励出错: {e}")
@@ -517,3 +529,90 @@ orms['external_code_format'] = CodeFormat
 
 orms['external_ebitda_predictor'] = EbitdaPredictionORM 
 orms['external_progressive_format'] = ProgressiveFormatORM 
+
+
+
+# 计算数学题
+
+
+class CorrectnessORM(ORM):
+    """
+    用于评估答案正确性的ORM。
+    如果提取的答案与标准答案完全匹配，则给予2.0的奖励，否则为0.0。
+    """
+
+    def __call__(self, completions, answer, **kwargs) -> List[float]:
+        responses = [completion[0]['content'] for completion in completions]
+        q = completions[0][0]['content']  # 获取问题内容
+        extracted_responses = [extract_xml_answer(r) for r in responses]
+        print('-'*20, f"Question:\n{q}", f"\nAnswer:\n{answer[0]}", f"\nResponse:\n{responses[0]}", f"\nExtracted:\n{extracted_responses[0]}")
+        return [2.0 if r == a else 0.0 for r, a in zip(extracted_responses, answer)]
+
+class IntegerFormatORM(ORM):
+    """
+    用于评估答案是否为整数的ORM。
+    如果提取的答案是纯数字，则给予0.5的奖励，否则为0.0。
+    """
+
+    def __call__(self, completions, **kwargs) -> List[float]:
+        responses = [completion[0]['content'] for completion in completions]
+        extracted_responses = [extract_xml_answer(r) for r in responses]
+        return [0.5 if r.isdigit() else 0.0 for r in extracted_responses]
+
+class StrictFormatORM(ORM):
+    """
+    用于评估严格格式要求的ORM。
+    要求格式为：<reasoning>\n内容\n</reasoning>\n<answer>\n内容\n</answer>\n
+    """
+
+    def __call__(self, completions, **kwargs) -> List[float]:
+        pattern = r"^<reasoning>\n.*?\n</reasoning>\n<answer>\n.*?\n</answer>\n$"
+        responses = [completion[0]["content"] for completion in completions]
+        matches = [re.match(pattern, r) for r in responses]
+        return [0.5 if match else 0.0 for match in matches]
+
+class SoftFormatORM(ORM):
+    """
+    用于评估宽松格式要求的ORM。
+    要求格式为：<reasoning>内容</reasoning><answer>内容</answer>
+    """
+
+    def __call__(self, completions, **kwargs) -> List[float]:
+        pattern = r"<reasoning>.*?</reasoning>\s*<answer>.*?</answer>"
+        responses = [completion[0]["content"] for completion in completions]
+        matches = [re.match(pattern, r) for r in responses]
+        return [0.5 if match else 0.0 for match in matches]
+
+class XMLCountORM(ORM):
+    """
+    用于评估XML标签完整性和格式的ORM。
+    根据XML标签的完整性和格式给予0.0到0.5之间的奖励。
+    """
+
+    def count_xml(self, text: str) -> float:
+        count = 0.0
+        if text.count("<reasoning>\n") == 1:
+            count += 0.125
+        if text.count("\n</reasoning>\n") == 1:
+            count += 0.125
+        if text.count("\n<answer>\n") == 1:
+            count += 0.125
+            count -= len(text.split("\n</answer>\n")[-1])*0.001
+        if text.count("\n</answer>") == 1:
+            count += 0.125
+            count -= (len(text.split("\n</answer>")[-1]) - 1)*0.001
+        return count
+
+    def __call__(self, completions, **kwargs) -> List[float]:
+        contents = [completion[0]["content"] for completion in completions]
+        return [self.count_xml(c) for c in contents]
+
+# 注册新的ORM类
+orms['external_correctness'] = CorrectnessORM
+orms['external_integer_format'] = IntegerFormatORM
+orms['external_strict_format'] = StrictFormatORM
+orms['external_soft_format'] = SoftFormatORM
+orms['external_xml_count'] = XMLCountORM
+
+
+
