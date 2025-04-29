@@ -615,4 +615,130 @@ orms['external_soft_format'] = SoftFormatORM
 orms['external_xml_count'] = XMLCountORM
 
 
+# --- 复用 Unsloth 中的辅助函数 ---
+def extract_xml_answer(text: str) -> str:
+    """从模型的 XML 格式输出中提取 <answer> 标签内的内容"""
+    if "<answer>" not in text or "</answer>" not in text:
+        logger.debug(f"Could not find <answer>...</answer> tags in: {text[:100]}...") # Log for debugging
+        return ""
+    try:
+        answer = text.split("<answer>")[-1]
+        answer = answer.split("</answer>")[0]
+        return answer.strip()
+    except Exception as e:
+        logger.warning(f"Error extracting XML answer: {e}\nText: {text[:100]}...")
+        return ""
 
+def count_xml(text: str) -> float:
+    """计算 XML 标签格式得分 (与 Unsloth 逻辑一致)"""
+    count = 0.0
+    # 稍微调整以匹配 GRPO ORM 常见的 0-1 范围，并简化惩罚项
+    # 原 Unsloth 的分数是累加的，这里改为更像检查点的分数
+    has_reasoning_start = text.count("<reasoning>") == 1 # 简化，不强制换行
+    has_reasoning_end = text.count("</reasoning>") == 1
+    has_answer_start = text.count("<answer>") == 1
+    has_answer_end = text.count("</answer>") == 1
+
+    if has_reasoning_start:
+        count += 0.2
+    if has_reasoning_end:
+        count += 0.2
+    if has_answer_start:
+        count += 0.2
+    if has_answer_end:
+        count += 0.2
+
+    # 检查基本结构 <reasoning>...</reasoning>\s*<answer>...</answer>
+    # 使用更宽松的检查，因为严格的换行可能难以达成
+    if re.search(r"<reasoning>.*?</reasoning>\s*<answer>.*?</answer>", text, re.DOTALL):
+        count += 0.2 # 额外奖励结构正确性
+
+    # 限制最高分为 1.0
+    return min(count, 1.0)
+
+# --- MS-Swift ORM 实现 ---
+
+class GSM8KCorrectnessORM(ORM):
+    """
+    检查模型提取的答案是否与基准答案完全匹配。
+    需要数据集中透传 'ground_truth_answer' 字段。
+    """
+    def __call__(self, completions: List[str], ground_truth_answer: List[str], **kwargs) -> List[float]:
+        rewards = []
+        # 确保 completions 和 ground_truth_answer 长度一致 (Swift 框架会保证)
+        for completion, truth in zip(completions, ground_truth_answer):
+            extracted_response = extract_xml_answer(completion)
+            # 使用原始的 2.0 分值
+            reward = 2.0 if extracted_response == truth else 0.0
+            # logger.debug(f"Truth: {truth}, Extracted: {extracted_response}, Reward: {reward}") # 可选调试日志
+            rewards.append(reward)
+        return rewards
+
+class GSM8KIsIntORM(ORM):
+    """
+    检查模型提取的答案是否为整数。
+    """
+    def __call__(self, completions: List[str], **kwargs) -> List[float]:
+        rewards = []
+        for completion in completions:
+            extracted_response = extract_xml_answer(completion)
+            # 移除可能的逗号和小数点 (如果答案格式允许的话)
+            cleaned_response = extracted_response.replace(",", "").split('.')[0]
+             # 使用原始的 0.5 分值
+            reward = 0.5 if cleaned_response.isdigit() or (cleaned_response.startswith('-') and cleaned_response[1:].isdigit()) else 0.0
+            rewards.append(reward)
+        return rewards
+
+class GSM8KStrictFormatORM(ORM):
+    """
+    严格检查模型输出是否符合特定的 XML 格式 (包括换行)。
+    注意：这个格式非常严格，模型可能很难完美匹配。
+    """
+    def __call__(self, completions: List[str], **kwargs) -> List[float]:
+        # 原始的严格模式正则，包含换行符
+        pattern = r"^<reasoning>\n(.*?)\n</reasoning>\n<answer>\n(.*?)\n</answer>\n?$" # 允许末尾可选换行
+        rewards = []
+        for completion in completions:
+            # 使用 re.DOTALL 让 . 匹配换行符，re.MULTILINE 处理 ^$
+            match = re.match(pattern, completion, re.DOTALL)
+            reward = 0.5 if match else 0.0
+            rewards.append(reward)
+        return rewards
+
+class GSM8KSoftFormatORM(ORM):
+    """
+    较宽松地检查模型输出是否包含 <reasoning>...</reasoning><answer>...</answer> 结构。
+    """
+    def __call__(self, completions: List[str], **kwargs) -> List[float]:
+        # 原始的宽松模式正则，允许中间有空格，不强制换行
+        # 添加 re.DOTALL 使 .*? 可以匹配换行符
+        pattern = r"<reasoning>.*?</reasoning>\s*<answer>.*?</answer>"
+        rewards = []
+        for completion in completions:
+            # 使用 re.search 而不是 re.match，允许格式出现在文本的任何位置
+            # 但通常我们期望它就是整个输出，所以 re.match 可能更合适，取决于期望
+            # 这里保持和 Unsloth 一致用 re.match，但加上 DOTALL
+            # 同时添加 ^ 和 $ 来确保匹配整个字符串（如果需要）
+            strict_pattern = r"^\s*<reasoning>.*?</reasoning>\s*<answer>.*?</answer>\s*$"
+            match = re.match(strict_pattern, completion, re.DOTALL)
+            reward = 0.5 if match else 0.0
+            rewards.append(reward)
+        return rewards
+
+class GSM8KXmlCountORM(ORM):
+    """
+    根据 XML 标签的存在和基本结构计算奖励分数。
+    使用了修改后的 count_xml 函数。
+    """
+    def __call__(self, completions: List[str], **kwargs) -> List[float]:
+        rewards = [count_xml(completion) for completion in completions]
+        return rewards
+
+
+# --- 注册 ORM ---
+# 使用 'external_' 前缀或自定义前缀来避免与内置 ORM 冲突
+orms['gsm8k_correctness'] = GSM8KCorrectnessORM
+orms['gsm8k_is_int'] = GSM8KIsIntORM
+orms['gsm8k_strict_format'] = GSM8KStrictFormatORM
+orms['gsm8k_soft_format'] = GSM8KSoftFormatORM
+orms['gsm8k_xml_count'] = GSM8KXmlCountORM
